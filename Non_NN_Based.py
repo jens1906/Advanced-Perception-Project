@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import result
 
 import cv2
+import numpy as np
 
 TRAIN_DIR = Path("Data/SoccerNet/tracking/train")
 
@@ -26,7 +27,8 @@ def load_seqinfo(seq_dir):
     }
 
 PreFrame = None  # Global variable to store the previous frame
-
+kernel_size = 5
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
 '''
 Load the ground truth. Look up the ball's track ID in gameinfo.ini (e.g. ball;1 = ID 18). Filter gt.txt by that ID and draw the box on each frame.
 Field mask. HSV green threshold → dilate and erode → fill the largest contour. Only search inside this area.
@@ -39,54 +41,92 @@ Evaluate on the test clips and your own annotated 1-minute clip: precision/recal
 Report: pipeline, failed early attempts, failure cases, comparison with YOLO.
 '''
 
+# ---------------- Kalman filter (added) ----------------
+# State = (x, y, vx, vy), measurement = (x, y), one time step = one frame
+kf = cv2.KalmanFilter(4, 2)
+kf.transitionMatrix = np.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
+kf.measurementMatrix = np.eye(2, 4, dtype=np.float32)
+missed_frames = 11  # Start "lost" so the first frame starts a track
+
+
+def kalman_filter_predict_and_update(kf, candidates, best_candidate):
+    global missed_frames
+    centers = (candidates[:, :2] + candidates[:, 2:4] / 2).astype(np.float32)
+
+    # Predict the next state
+    prediction = kf.predict()[:2, 0]
+
+    # Update with the nearest candidate within 40 px, otherwise just keep the prediction
+    distances = np.linalg.norm(centers - prediction, axis=1)
+    if len(centers) and distances.min() < 40:
+        kf.correct(centers[distances.argmin()].reshape(2, 1))
+        missed_frames = 0
+    else:
+        missed_frames += 1
+        # Lost for >10 frames: restart the track on the best-scoring candidate
+        if missed_frames > 10 and best_candidate is not None:
+            x, y, w, h = best_candidate
+            kf.statePost = np.float32([[x + w / 2], [y + h / 2], [0], [0]])
+            missed_frames = 0
+
+    return kf.statePost[:2, 0].astype(int)
+# -------------------------------------------------------
+
 
 def process_frame(frame):
-    global PreFrame
-    if PreFrame is None:
-        PreFrame = frame.copy()
-        return frame  # Return the first frame as is
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    # Apply a threshold to the HSV frame to isolate the green color
-    subtracted_frame = cv2.absdiff(frame, PreFrame)
-    PreFrame = frame.copy()    
-    hsv_thresh = cv2.inRange(hsv_frame, (0, 30, 0), (255, 130, 255))  # Example threshold for green color
-    gray_frame = cv2.cvtColor(subtracted_frame, cv2.COLOR_BGR2GRAY)
-    median_frame = cv2.medianBlur(gray_frame, 5)
-    dialted_frame = cv2.dilate(median_frame, None, iterations=4)
-    eroded_frame = cv2.erode(dialted_frame, None, iterations=1)
+    # White pixels -> top-hat keeps only small objects -> open removes 1-2 px noise (erode deleted small balls)
+    white_frame = cv2.inRange(frame, (125, 165, 175), (255, 255, 255))
+    white_top_hat_frame = cv2.morphologyEx(white_frame, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)))
+    opened_frame = cv2.morphologyEx(white_top_hat_frame, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
 
-    hough_frame = cv2.HoughCircles(gray_frame, cv2.HOUGH_GRADIENT, dp=0.2, minDist=10,
-                                   param1=50, param2=30, minRadius=1, maxRadius=10)
+    # Each blob becomes a candidate (stats row = x, y, w, h, area), keep only ball-sized ones
+    _, _, stats, _ = cv2.connectedComponentsWithStats(opened_frame, connectivity=8)
+    candidates = stats[1:][(stats[1:, 4] > 8) & (stats[1:, 4] < 600)]  # Row 0 is the background
 
-    if hough_frame is not None:
-        for x, y, r in hough_frame[0]:
-            cv2.circle(frame, (int(x), int(y)), int(r), (0, 255, 0), 2)
+    # Score: the ball is a lone white blob, so pick the one with the least other white around it
+    best_candidate, best_score = None, -1
+    for x, y, w, h, area in candidates:
+        pad = max(w, h)
+        around = white_frame[max(y - pad, 0):y + h + pad, max(x - pad, 0):x + w + pad]
+        score = 1 - (np.count_nonzero(around) - area) / around.size
+        if score > best_score:
+            best_candidate, best_score = (x, y, w, h), score
+
+    for x, y, w, h, area in candidates:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
+    if best_candidate is not None:
+        x, y, w, h = best_candidate
+        cv2.rectangle(frame, (x - 4, y - 4), (x + w + 4, y + h + 4), (0, 0, 255), 3)
+
+    # ---------------- Kalman filter (added) ----------------
+    # Yellow circle = tracked ball position
+    ball_position = kalman_filter_predict_and_update(kf, candidates, best_candidate)
+    cv2.circle(frame, (int(ball_position[0]), int(ball_position[1])), 12, (0, 255, 255), 3)
+    # -------------------------------------------------------
+    return frame
+
     '''
-    template_football = cv2.imread("Football.png", cv2.IMREAD_GRAYSCALE)
-    # Perform template matching to find the ball in the frame
-    result = cv2.matchTemplate(hough_frame, template_football, cv2.TM_CCOEFF_NORMED)
-    threshold = 0.5  # Adjust this threshold based on your needs
-    loc = cv2.minMaxLoc(result)
-    if loc[1] >= threshold:
-        # Ball detected, draw a rectangle around it
-        top_left = loc[3]
-        h, w = template_football.shape
-        bottom_right = (top_left[0] + w, top_left[1] + h)
-        cv2.rectangle(hough_frame, top_left, bottom_right, (0, 255, 0), 2)
-        cv2.putText(hough_frame, "Ball Detected", (top_left[0], top_left[1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-    result_vis = cv2.normalize(result, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
+    # Template matching attempt
+    greenmask_RGB_frame = cv2.inRange(frame, (125, 165, 175), (255, 255, 255))
+    white_top_hat_frame = cv2.morphologyEx(greenmask_RGB_frame, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)))
+    morph_open_frame = cv2.morphologyEx(white_top_hat_frame, cv2.MORPH_OPEN, kernel)
+    template = cv2.morphologyEx(cv2.imread("Football.png", cv2.IMREAD_GRAYSCALE), cv2.MORPH_CLOSE, kernel)
+    result = cv2.matchTemplate(morph_open_frame, template, cv2.TM_CCOEFF_NORMED)
+    threshold = 0.5
+    locations = cv2.minMaxLoc(result)
+    if locations[1] > threshold:
+        best_match_location = locations[3]
+        top_left = best_match_location
+        bottom_right = (top_left[0] + template.shape[1], top_left[1] + template.shape[0])
+        cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
+    return frame
     '''
-
-
-    # Placeholder for the non-NN ball tracker; returns the frame unchanged for now
-    return frame  # Return the processed frame (currently just the eroded difference)
 
 
 def play_sequence(seq_dir):
     info = load_seqinfo(seq_dir)
     frame_paths = sorted(info["im_dir"].glob(f"*{info['ext']}"))
-    delay_ms = max(1, int(1000 / info["fps"]))
+    delay_ms = max(1, int(100 / info["fps"]))
 
     window = f"Non-NN - {info['name']}"
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
