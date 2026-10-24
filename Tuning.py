@@ -1,0 +1,19 @@
+# Verification parameters
+VERIFY_MARGIN = 5
+
+# Field and grass parameters
+GRASS_HUE_RANGE = 15
+GRASS_MIN_SATURATION = 60
+FIELD_SCALE = 4
+FIELD_CLOSE_SIZE = 15
+FIELD_MIN_PART = 0.1
+FIELD_MARGIN = 5
+
+# Ball scoring parameters
+BALL_FULL_AREA = 60
+MAX_ELONGATION = 2.5
+
+# Tracking parameters
+TOP_CANDIDATES = 10
+GATE_RADIUS = 50
+MAX_MISSED_FRAMES = 10
