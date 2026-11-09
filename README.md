@@ -8,11 +8,11 @@ For an RTX 50xx GPU, set `TORCH_INDEX=https://download.pytorch.org/whl/cu128` fi
 The script should end with `CUDA available: True`.
 
 ## Data
-Copy `train.zip` and `test.zip` from SoccerNet tracking to `Data/SoccerNet/tracking/` and unzip:
+With `.venv` active, download and unzip SoccerNet tracking train and test (about 18 GB) into `Data/SoccerNet/tracking/`:
 ```
-unzip Data/SoccerNet/tracking/train.zip -d Data/SoccerNet/tracking/train
-unzip Data/SoccerNet/tracking/test.zip -d Data/SoccerNet/tracking/test
+python DownloadData.py
 ```
+Zips or folders that are already there are not downloaded or extracted again.
 
 ## Train
 Activate `.venv` (`source .venv/bin/activate` or `.venv\Scripts\activate`), then run:
