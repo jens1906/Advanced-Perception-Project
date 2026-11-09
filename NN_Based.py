@@ -1,4 +1,6 @@
 import random
+from pathlib import Path
+import sys
 
 import numpy as np
 from ultralytics import YOLO
@@ -32,6 +34,6 @@ if __name__ == "__main__":
     if not sequences:
         raise SystemExit(f"No sequences found under {TRAIN_DIR}")
 
-    seqDir = random.choice(sequences)
+    seqDir = Path(sys.argv[1]) if len(sys.argv) > 1 else random.choice(sequences)
     print(f"Playing {seqDir}")
     PlaySequence(seqDir, ProcessFrame, ResetTracker)

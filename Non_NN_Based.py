@@ -1,4 +1,6 @@
 import random
+from pathlib import Path
+import sys
 
 import cv2
 import numpy as np
@@ -196,6 +198,6 @@ if __name__ == "__main__":
     if not sequences:
         raise SystemExit(f"No sequences found under {TRAIN_DIR}")
 
-    seq_dir = random.choice(sequences)
+    seq_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else random.choice(sequences)
     print(f"Playing {seq_dir}")
     PlaySequence(seq_dir, ProcessFrame, ResetTracker)

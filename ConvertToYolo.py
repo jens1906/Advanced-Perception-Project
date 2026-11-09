@@ -1,4 +1,5 @@
 import configparser
+import os
 import shutil
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import numpy as np
 from PreliminaryFunctions import TRAIN_DIR, FindSequences, LoadSequenceInfo
 
 # Conversion parameters
-VAL_DIR = Path("Data/SoccerNet/tracking/test")
+VAL_EVERY = 5  # every 5th training sequence is held out for validation
 OUTPUT_DIR = Path("Data/yolo")
 FRAME_STEP = 5
 CLASS_NAMES = ["ball", "player", "goalkeeper", "referee"]
@@ -50,14 +51,21 @@ def ConvertSequence(seqDir, split):
 
         name = f"{info['name']}_{framePath.stem}"
         (OUTPUT_DIR / "labels" / split / f"{name}.txt").write_text("\n".join(lines))
-        (OUTPUT_DIR / "images" / split / f"{name}{info['ext']}").symlink_to(framePath.resolve())
+        imagePath = OUTPUT_DIR / "images" / split / f"{name}{info['ext']}"
+        try:
+            os.link(framePath, imagePath)  # hard link, no admin rights needed on Windows
+        except OSError:
+            shutil.copy2(framePath, imagePath)
     return len(framePaths)
 
 
 if __name__ == "__main__":
-    splits = {"train": FindSequences(TRAIN_DIR), "val": FindSequences(VAL_DIR)}
-    if not splits["val"]:
-        raise SystemExit(f"No sequences found under {VAL_DIR}, unzip test.zip there first")
+    sequences = FindSequences(TRAIN_DIR)
+    if not sequences:
+        raise SystemExit(f"No sequences found under {TRAIN_DIR}")
+    # Split by whole sequence so frames from one clip never appear in both train and val
+    splits = {"train": [s for i, s in enumerate(sequences) if i % VAL_EVERY != 0],
+              "val": [s for i, s in enumerate(sequences) if i % VAL_EVERY == 0]}
 
     shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
     for split, sequences in splits.items():
