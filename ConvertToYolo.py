@@ -50,7 +50,11 @@ def ConvertSequence(seqDir, split):
 
         name = f"{info['name']}_{framePath.stem}"
         (OUTPUT_DIR / "labels" / split / f"{name}.txt").write_text("\n".join(lines))
-        (OUTPUT_DIR / "images" / split / f"{name}{info['ext']}").symlink_to(framePath.resolve())
+        imagePath = OUTPUT_DIR / "images" / split / f"{name}{info['ext']}"
+        try:
+            imagePath.symlink_to(framePath.resolve())
+        except OSError:
+            shutil.copy(framePath, imagePath)
     return len(framePaths)
 
 

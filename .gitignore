@@ -1,6 +1,8 @@
 # Datasets (SoccerNet zips, extracted frames, annotations)
 Data/
 data/
-*.md__pycache__/
+*.md
+__pycache__/
 runs/
 *.pt
+.venv/
