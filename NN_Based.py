@@ -8,7 +8,8 @@ from ultralytics import YOLO
 from PreliminaryFunctions import TRAIN_DIR, FindSequences, PlaySequence
 
 # YOLO model
-model = YOLO("yolo26n.pt")
+MODEL_PATH = Path(__file__).parent / "Advanced-Perception-Project-Ball-Only/runs/detect/ball-only-baseline/weights/best.pt"
+model = YOLO(str(MODEL_PATH))
 
 
 def ResetTracker():
@@ -18,7 +19,7 @@ def ResetTracker():
 
 
 def ProcessFrame(frame):
-    result = model.track(frame, persist=True, tracker="botsort.yaml", imgsz=1280, conf=0.1, classes=[32], verbose=False)[0]
+    result = model.track(frame, persist=True, tracker="botsort.yaml", imgsz=1280, conf=0.1, classes=[0], verbose=False)[0]
     boxes = result.boxes.xyxy.cpu().numpy()
     candidates = np.column_stack([boxes[:, 0], boxes[:, 1], boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]])
     ballPosition = None

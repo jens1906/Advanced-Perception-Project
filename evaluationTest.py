@@ -13,7 +13,7 @@ import numpy as np
 from PreliminaryFunctions import VERIFY_MARGIN, FindSequences, LoadBallGroundTruth, LoadSequenceInfo, PrintVerificationResult, ScoreFrame
 
 # Evaluation settings
-USE_NN = False  # True = NN_Based (YOLO), False = Non_NN_Based
+USE_NN = True  # True = NN_Based (YOLO), False = Non_NN_Based
 PLOT_ONLY = False  # True = skip the evaluation and redraw the plot from the saved CSV
 TEST_DIR = Path("Data/SoccerNet/tracking/test")
 TEST_ZIP = Path("Data/SoccerNet/tracking/test.zip")
