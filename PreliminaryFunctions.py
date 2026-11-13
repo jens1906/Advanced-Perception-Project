@@ -4,10 +4,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from Tuning import VERIFY_MARGIN
-
 # Dataset constants
 TRAIN_DIR = Path("Data/SoccerNet/tracking/train")
+VERIFY_MARGIN = 5
 
 
 def FindSequences(root):
